@@ -34,6 +34,9 @@ namespace School.Controllers
             }
 
             var student = await _context.Students
+                .Include(s => s.Enrollments)
+                .ThenInclude(e => e.Course)
+                .AsNoTracking()
                 .SingleOrDefaultAsync(m => m.ID == id);
             if (student == null)
             {
@@ -54,14 +57,25 @@ namespace School.Controllers
         // more details see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Create([Bind("ID,LastName,FirstMidName,EnrollmentDate")] Student student)
+        public async Task<IActionResult> Create([Bind("LastName,FirstMidName,EnrollmentDate")] Student student)
         {
-            if (ModelState.IsValid)
+            try
             {
-                _context.Add(student);
-                await _context.SaveChangesAsync();
-                return RedirectToAction("Index");
+                if (ModelState.IsValid)
+                {
+                    _context.Add(student);
+                    await _context.SaveChangesAsync();
+                    return RedirectToAction("Index");
+                }
             }
+            catch (DbUpdateException /* ex */)
+            {
+                //Log the error (uncomment ex variable name and write a log.
+                ModelState.AddModelError("", "Unable to save changes. " +
+                                             "Try again, and if the problem persists " +
+                                             "see your system administrator.");
+            }
+           
             return View(student);
         }
 
@@ -84,40 +98,46 @@ namespace School.Controllers
         // POST: Students/Edit/5
         // To protect from overposting attacks, please enable the specific properties you want to bind to, for 
         // more details see http://go.microsoft.com/fwlink/?LinkId=317598.
-        [HttpPost]
+        [HttpPost, ActionName("Edit")]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Edit(int id, [Bind("ID,LastName,FirstMidName,EnrollmentDate")] Student student)
+        public async Task<IActionResult> EditPost(int? id)
         {
-            if (id != student.ID)
+            if (id == null)
             {
                 return NotFound();
             }
 
-            if (ModelState.IsValid)
+            /*
+             * The following code reads the existing entity and calls TryUpdateModel to update fields in the retrieved entity based on user input in the posted form data. 
+             * The Entity Framework's automatic change tracking sets the Modified flag on the fields that are changed by form input.
+             * When the SaveChanges method is called, the Entity Framework creates SQL statements to update the database row. 
+             * Concurrency conflicts are ignored, and only the table columns that were updated by the user are updated in the database
+             */
+
+            var studentToUpdate = await _context.Students.SingleOrDefaultAsync(s => s.ID == id);
+            //The empty string preceding the list of fields in the parameter list is for a prefix to use with the form fields names
+            if (await TryUpdateModelAsync<Student>(studentToUpdate,"", s => 
+                                                                        s.FirstMidName, s => s.LastName, s => s.EnrollmentDate))
             {
                 try
                 {
-                    _context.Update(student);
                     await _context.SaveChangesAsync();
+                    return RedirectToAction("Index");
                 }
-                catch (DbUpdateConcurrencyException)
+                catch (DbUpdateException /* ex */)
                 {
-                    if (!StudentExists(student.ID))
-                    {
-                        return NotFound();
-                    }
-                    else
-                    {
-                        throw;
-                    }
+                    //Log the error (uncomment ex variable name and write a log.)
+                    ModelState.AddModelError("", "Unable to save changes. " +
+                                                 "Try again, and if the problem persists, " +
+                                                 "see your system administrator.");
                 }
-                return RedirectToAction("Index");
             }
-            return View(student);
+            return View(studentToUpdate);
         }
 
         // GET: Students/Delete/5
-        public async Task<IActionResult> Delete(int? id)
+       
+        public async Task<IActionResult> Delete(int? id, bool? saveChangesError = false)
         {
             if (id == null)
             {
@@ -125,11 +145,20 @@ namespace School.Controllers
             }
 
             var student = await _context.Students
+                .AsNoTracking()
                 .SingleOrDefaultAsync(m => m.ID == id);
             if (student == null)
             {
                 return NotFound();
             }
+
+            if (saveChangesError.GetValueOrDefault())
+            {
+                ViewData["ErrorMessage"] =
+                    "Delete failed. Try again, and if the problem persists " +
+                    "see your system administrator.";
+            }
+
 
             return View(student);
         }
@@ -139,7 +168,27 @@ namespace School.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> DeleteConfirmed(int id)
         {
-            var student = await _context.Students.SingleOrDefaultAsync(m => m.ID == id);
+            var student = await _context.Students
+                .AsNoTracking()
+                .SingleOrDefaultAsync(m => m.ID == id);
+            if (student == null)
+            {
+                return RedirectToAction("Index");
+            }
+
+            try
+            {
+
+            }
+            catch (DbUpdateException /*e*/ )
+            {
+                //Log the error (uncomment ex variable name and write a log)
+                //Console.WriteLine(e);
+                return RedirectToAction("Delete", new {id, saveChangesError = true});
+             
+            }
+
+
             _context.Students.Remove(student);
             await _context.SaveChangesAsync();
             return RedirectToAction("Index");
