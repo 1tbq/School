@@ -19,11 +19,75 @@ namespace School.Controllers
             _context = context;    
         }
 
+
+
         // GET: Students
-        public async Task<IActionResult> Index()
+        public async Task<IActionResult> Index(string sortOrder, string searchString,string currentFilter, int? page)
         {
-            return View(await _context.Students.ToListAsync());
+
+            //These are ternary statements. The first one specifies 
+            //that if the sortOrder parameter is null or empty, NameSortParm should be set to "name_desc"; 
+            //otherwise, it should be set to an empty string.
+
+            ViewData["CurrrentSort"] = sortOrder;
+            ViewData["NameSortParm"] = String.IsNullOrEmpty(sortOrder) ? "name_desc" : "";
+            ViewData["DateSortParm"] = sortOrder == "Date" ? "date_desc" : "Date";
+
+            if (searchString != null)
+            {
+                page = 1;
+            }
+            else
+            {
+                searchString = currentFilter;
+            }
+
+
+            ViewData["CurrentFilter"] = searchString;
+            
+            var students = from s in _context.Students
+                select s;
+
+            /**
+             You've added a searchString parameter to the Index method. 
+            The search string value is received from a text box that you'll add to the Index view. 
+            You've also added to the LINQ statement a where clause that selects only students whose first name or last name contains the search string. 
+            The statement that adds the where clause is executed only if there's a value to search for.
+             */
+
+            if (!String.IsNullOrEmpty(searchString))
+            {
+                students = students.Where(s => s.LastName.Contains(searchString)
+                                               || s.FirstMidName.Contains(searchString));
+            }
+
+            switch (sortOrder)
+            {
+                case "name_desc":
+                    students = students.OrderByDescending(s => s.LastName);
+                    break;
+                case "Date":
+                    students = students.OrderBy(s => s.EnrollmentDate);
+                    break;
+                case "date_desc":
+                    students = students.OrderByDescending(s => s.EnrollmentDate);
+                    break;
+                default:
+                    students = students.OrderBy(s => s.LastName);
+                    break;
+            }
+            /**
+             The method uses LINQ to Entities to specify the column to sort by. The code creates an IQueryable variable before the switch statement, 
+            modifies it in the switch statement, and calls the ToListAsync method after the switch statement. When you create and modify IQueryable variables, 
+            no query is sent to the database. The query is not executed until you convert the IQueryable object into a collection by calling a method 
+            such as ToListAsync. Therefore, this code results in a single query that is not executed until the return View statement.
+             */
+            int pageSize = 3;
+            return View(await PaginatedList<Student>.CreateAsync(students.AsNoTracking(), page ?? 1, pageSize));
         }
+
+
+
 
         // GET: Students/Details/5
         public async Task<IActionResult> Details(int? id)
@@ -145,6 +209,13 @@ namespace School.Controllers
             }
 
             var student = await _context.Students
+                /*
+                 When a database context retrieves table rows and creates entity objects that represent them, 
+                 by default it keeps track of whether the entities in memory are in sync with what's in the database. 
+                 The data in memory acts as a cache and is used when you update an entity. 
+                 This caching is often unnecessary in a web application because context instances are typically short-lived 
+                 (a new one is created and disposed for each request) and the context that reads an entity is typically disposed before that entity is used again.
+                 */
                 .AsNoTracking()
                 .SingleOrDefaultAsync(m => m.ID == id);
             if (student == null)
